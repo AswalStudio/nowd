@@ -8,65 +8,77 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// Your fixed room-password mapping
+// ✅ Room-password mapping
 const roomPasswords = {
-  "SSSJIS": "#7430$",
-  "WAGON": "PAZz0%",
+  SSSJIS: "#7430$",
+  WAGON: "PAZz0%",
   "Y2M$": "7R0Mnk(i)",
-  "CHUPk0": "Az1Bu42&"
+  CHUPk0: "Az1Bu42&"
 };
 
-function isValidRoomPassword(room, password) {
-  return roomPasswords[room] === password;
-}
-
-app.use(express.static('public')); // serve your html and client files from /public folder
+// ✅ Serve static files (e.g., public/index.html)
+app.use(express.static('public'));
 
 io.on('connection', socket => {
-  // Handle joinRoom event
+  console.log('🔌 New socket connected:', socket.id);
+
+  // 🔐 Handle join room
   socket.on('joinRoom', ({ username, room, password }) => {
-    if (!roomPasswords[room]) {
-      socket.emit('errorMessage', 'Room does not exist');
-      return;
-    }
-    if (!isValidRoomPassword(room, password)) {
-      socket.emit('errorMessage', 'Invalid room password');
+    if (!username || !room || !password) {
+      socket.emit('errorMessage', 'All fields are required.');
       return;
     }
 
+    const expectedPassword = roomPasswords[room];
+
+    if (!expectedPassword) {
+      socket.emit('errorMessage', '❌ Room does not exist.');
+      return;
+    }
+
+    if (expectedPassword !== password) {
+      socket.emit('errorMessage', '❌ Incorrect password.');
+      return;
+    }
+
+    // ✅ Join room
     socket.join(room);
     socket.username = username;
     socket.room = room;
 
     socket.emit('joined', room);
-
-    // Notify all in the room about active users count
-    const clients = io.sockets.adapter.rooms.get(room) || new Set();
-    io.to(room).emit('activeUsers', clients.size);
-
     io.to(room).emit('message', { username: 'System', message: `${username} joined the room.` });
+
+    updateActiveUserCount(room);
   });
 
-  // Handle chatMessage event
+  // 💬 Chat message
   socket.on('chatMessage', ({ room, username, message }) => {
     if (!room || !username || !message) return;
+
     io.to(room).emit('message', { username, message });
   });
 
-  // Handle disconnect event
+  // ❌ Disconnection handling
   socket.on('disconnect', () => {
     const room = socket.room;
     const username = socket.username;
 
     if (room && username) {
       io.to(room).emit('message', { username: 'System', message: `${username} left the room.` });
-
-      const clients = io.sockets.adapter.rooms.get(room) || new Set();
-      io.to(room).emit('activeUsers', clients.size);
+      updateActiveUserCount(room);
     }
+
+    console.log(`⚠️ Socket disconnected: ${socket.id}`);
   });
+
+  // Helper: Update user count
+  function updateActiveUserCount(room) {
+    const clients = io.sockets.adapter.rooms.get(room) || new Set();
+    io.to(room).emit('activeUsers', clients.size);
+  }
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
