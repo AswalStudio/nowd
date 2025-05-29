@@ -1,9 +1,15 @@
-const form = document.getElementById("loginForm");
-const chatBox = document.getElementById("chatBox");
-const roomDisplay = document.getElementById("roomDisplay");
-const messages = document.getElementById("messages");
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const { Server } = require('socket.io');
 
-// Fixed room-password mapping
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+const PORT = process.env.PORT || 3000;
+
+// Room-password mapping
 const roomPasswords = {
   "SSSJIS": "#7430$",
   "WAGON": "PAZz0%",
@@ -11,42 +17,46 @@ const roomPasswords = {
   "CHUPk0": "Az1Bu42&"
 };
 
-form.addEventListener("submit", function (e) {
-  e.preventDefault();
+app.use(express.static(path.join(__dirname, 'public')));
 
-  const user = document.getElementById("username").value.trim();
-  const pass = document.getElementById("password").value.trim();
-  const room = document.getElementById("room").value.trim();
+io.on('connection', (socket) => {
+  console.log('User connected:', socket.id);
 
-  if (!user || !pass || !room) {
-    alert("All fields are required.");
-    return;
-  }
+  socket.on('joinRoom', ({ username, room, password }, callback) => {
+    // Validate room and password
+    if (!roomPasswords[room]) {
+      return callback({ error: 'Invalid room name.' });
+    }
+    if (roomPasswords[room] !== password) {
+      return callback({ error: 'Incorrect password for this room.' });
+    }
 
-  // Check if room exists
-  if (!roomPasswords[room]) {
-    alert("Invalid room name.");
-    return;
-  }
+    socket.join(room);
+    socket.data.username = username;
+    socket.data.room = room;
 
-  // Check if password matches
-  if (roomPasswords[room] !== pass) {
-    alert("Incorrect password for this room.");
-    return;
-  }
+    callback({ success: true });
 
-  form.classList.add("hidden");
-  chatBox.classList.remove("hidden");
-  roomDisplay.textContent = room;
+    io.to(room).emit('message', `${username} has joined the room.`);
+  });
+
+  socket.on('chatMessage', (msg) => {
+    const username = socket.data.username;
+    const room = socket.data.room;
+    if (!username || !room) return; // Not joined properly
+
+    io.to(room).emit('message', `${username}: ${msg}`);
+  });
+
+  socket.on('disconnect', () => {
+    const username = socket.data.username;
+    const room = socket.data.room;
+    if (username && room) {
+      io.to(room).emit('message', `${username} has left the room.`);
+    }
+  });
 });
 
-function sendMessage() {
-  const input = document.getElementById("message");
-  const msg = input.value.trim();
-  if (!msg) return;
-
-  const div = document.createElement("div");
-  div.textContent = "You: " + msg;
-  messages.appendChild(div);
-  input.value = "";
-}
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
