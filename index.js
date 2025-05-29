@@ -1,15 +1,13 @@
-const express = require('express');
-const http = require('http');
-const path = require('path');
-const { Server } = require('socket.io');
+// index.js
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
-
-// Room-password mapping
+// Fixed room-password mapping
 const roomPasswords = {
   "SSSJIS": "#7430$",
   "WAGON": "PAZz0%",
@@ -17,46 +15,33 @@ const roomPasswords = {
   "CHUPk0": "Az1Bu42&"
 };
 
-app.use(express.static(path.join(__dirname, 'public')));
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  socket.on('joinRoom', ({ username, room, password }, callback) => {
-    // Validate room and password
+  socket.on("joinRoom", ({ username, room, password }) => {
     if (!roomPasswords[room]) {
-      return callback({ error: 'Invalid room name.' });
+      socket.emit("errorMessage", "Invalid room name.");
+      return;
     }
     if (roomPasswords[room] !== password) {
-      return callback({ error: 'Incorrect password for this room.' });
+      socket.emit("errorMessage", "Incorrect password for this room.");
+      return;
     }
-
     socket.join(room);
-    socket.data.username = username;
-    socket.data.room = room;
-
-    callback({ success: true });
-
-    io.to(room).emit('message', `${username} has joined the room.`);
+    socket.emit("joined", room);
+    io.to(room).emit("message", `${username} has joined the room.`);
   });
 
-  socket.on('chatMessage', (msg) => {
-    const username = socket.data.username;
-    const room = socket.data.room;
-    if (!username || !room) return; // Not joined properly
-
-    io.to(room).emit('message', `${username}: ${msg}`);
+  socket.on("chatMessage", ({ room, username, message }) => {
+    io.to(room).emit("message", `${username}: ${message}`);
   });
 
-  socket.on('disconnect', () => {
-    const username = socket.data.username;
-    const room = socket.data.room;
-    if (username && room) {
-      io.to(room).emit('message', `${username} has left the room.`);
-    }
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
   });
 });
 
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
